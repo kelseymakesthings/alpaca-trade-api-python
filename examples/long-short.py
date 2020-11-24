@@ -6,13 +6,14 @@ import datetime
 API_KEY = "YOUR_API_KEY_HERE"
 API_SECRET = "YOUR_API_SECRET_HERE"
 APCA_API_BASE_URL = "https://paper-api.alpaca.markets"
-
+COMPARE_VALUE = 100000
 
 class LongShort:
   def __init__(self):
     self.alpaca = tradeapi.REST(API_KEY, API_SECRET, APCA_API_BASE_URL, 'v2')
-
-    stockUniverse = ['DOMO', 'TLRY', 'SQ', 'MRO', 'AAPL', 'GM', 'SNAP', 'SHOP', 'SPLK', 'BA', 'AMZN', 'SUI', 'SUN', 'TSLA', 'CGC', 'SPWR', 'NIO', 'CAT', 'MSFT', 'PANW', 'OKTA', 'TWTR', 'TM', 'RTN', 'ATVI', 'GS', 'BAC', 'MS', 'TWLO', 'QCOM', ]
+    self.scorpio_good = ['CCL', 'ES', 'SYY', 'NCLH']
+    self.scorpio_bad = ['MA', 'ADSK', 'FB', 'DAL']
+    stockUniverse = self.scorpio_good + self.scorpio_bad
     # Format the allStocks variable for use in the class.
     self.allStocks = []
     for stock in stockUniverse:
@@ -28,6 +29,14 @@ class LongShort:
     self.longAmount = 0
     self.shortAmount = 0
     self.timeToClose = None
+  
+  
+  def print_big(self, phrase, font):
+      f = Figlet(font=font)
+      print(f.renderText(phrase))
+
+  def clear_window(self):
+      print('\033[H\033[J') # ANSI sequence to clear screen
 
   def run(self):
     # First, cancel any existing orders so they don't impact our buying power.
@@ -51,7 +60,7 @@ class LongShort:
       currTime = clock.timestamp.replace(tzinfo=datetime.timezone.utc).timestamp()
       self.timeToClose = closingTime - currTime
 
-      if(self.timeToClose < (60 * 15)):
+      if(self.timeToClose < (60 * 10)):
         # Close all positions when 15 minutes til market close.
         print("Market closing soon.  Closing positions.")
 
@@ -68,14 +77,20 @@ class LongShort:
           tSubmitOrder.join()
 
         # Run script again after market close for next trading day.
-        print("Sleeping until market close (15 minutes).")
-        time.sleep(60 * 15)
+        print("Sleeping until market close (10 minutes).")
+        time.sleep(60 * 10)
       else:
         # Rebalance the portfolio.
         tRebalance = threading.Thread(target=self.rebalance)
         tRebalance.start()
         tRebalance.join()
-        time.sleep(60)
+        # Scorpio trait: sudden sting!
+        if random.randint(0, 4) == 0:
+          self.clear_window()
+          self.print_big('STING!', 'slant')
+          time.sleep(2)
+        else:
+          time.sleep(20)
 
   # Wait for market to open.
   def awaitMarketOpen(self):
@@ -228,6 +243,14 @@ class LongShort:
         tResendBOShort.start()
         tResendBOShort.join()
 
+    # Bigly print total portfolio value change
+    balance_change = round(float(self.alpaca.get_account().equity) - COMPARE_VALUE, 2)
+    if balance_change >= 0:
+        print('Portfolio gain')
+    else:
+        print('Portfolio loss')
+    self.print_big(f'${balance_change}', 'roman')
+
   # Re-rank all stocks to adjust longs and shorts.
   def rerank(self):
     tRank = threading.Thread(target=self.rank)
@@ -306,12 +329,15 @@ class LongShort:
       resp.append(True)
 
   # Get percent changes of the stock prices over the past 10 minutes.
+  # (we choose 2 out of 4 stocks to short and long with each rebalance)
   def getPercentChanges(self):
     length = 10
     for i, stock in enumerate(self.allStocks):
       bars = self.alpaca.get_barset(stock[0], 'minute', length)
       self.allStocks[i][1] = (bars[stock[0]][len(bars[stock[0]]) - 1].c - bars[stock[0]][0].o) / bars[stock[0]][0].o
-
+      # Skew ranking to unfavor scorpio-incompatible stocks
+      if stock[0] in self.scorpio_bad:
+        self.allStocks[i][1] = self.allStocks[i][1] - 100000
   # Mechanism used to rank the stocks, the basis of the Long-Short Equity Strategy.
   def rank(self):
     # Ranks all stocks by percent change over the past 10 minutes (higher is better).
@@ -321,6 +347,12 @@ class LongShort:
 
     # Sort the stocks in place by the percent change field (marked by pc).
     self.allStocks.sort(key=lambda x: x[1])
+
+    # Scorpio trait: unexpected forceful change!
+    if random.randint(0, 4) == 0:
+      self.clear_window()
+      self.print_big('UNEXPECTED FORCEFUL CHANGE!', 'slant')
+      self.allStocks.reverse()
 
 # Run the LongShort class
 ls = LongShort()
